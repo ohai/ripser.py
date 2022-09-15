@@ -111,6 +111,7 @@ def ripser(
     do_cocycles=False,
     metric="euclidean",
     n_perm=None,
+    save_birth_death_simplices=False,
 ):
     """Compute persistence diagrams for X.
 
@@ -158,6 +159,10 @@ def ripser(
         computation, at the expense of some accuracy, which can 
         be bounded as a maximum bottleneck distance to all diagrams
         on the original point set
+
+    save_birth_death_simplices: bool, optional, default False
+       Save birth and death simplices in the `birth_simplex` and `death_simplex`
+       value of the returned dictionary.
 
     Returns
     -------
@@ -313,12 +318,13 @@ def ripser(
             maxdim,
             thresh,
             coeff,
-            do_cocycles
+            do_cocycles,
+            save_birth_death_simplices
         )
     else:
         I, J = np.meshgrid(np.arange(n_points), np.arange(n_points))
         DParam = np.array(dm[I > J], dtype=np.float32)
-        res = DRFDM(DParam, maxdim, thresh, coeff, do_cocycles)
+        res = DRFDM(DParam, maxdim, thresh, coeff, do_cocycles, save_birth_death_simplices)
 
     # Unwrap persistence diagrams
     dgms = res["births_and_deaths_by_dim"]
@@ -340,6 +346,20 @@ def ripser(
                 ccl[:, 0:-1] = idx_perm[ccl[:, 0:-1]]
             cocycles[dim].append(ccl)
 
+    # birth and death simplices
+    birth_death_simplices = []
+    for dim in range(len(res["birth_simplices_by_dim"])):
+        birth_death_simplices.append([])
+        for j in range(len(res["birth_simplices_by_dim"][dim])):
+            birth_simplex = res["birth_simplices_by_dim"][dim][j]
+            death_simplex = res["death_simplices_by_dim"][dim][j]
+            if doing_permutation:
+                birth_simplex = idx_perm[birth_simplex]
+                death_simplex = idx_perm[death_simplex]
+            if death_simplex == []:
+                death_simplex = None
+            birth_death_simplices[dim].append((birth_simplex, death_simplex))
+
     ret = {
         "dgms": dgms,
         "cocycles": cocycles,
@@ -347,6 +367,7 @@ def ripser(
         "dperm2all": dperm2all,
         "idx_perm": idx_perm,
         "r_cover": r_cover,
+        "birth_death_simplices": birth_death_simplices,
     }
     return ret
 

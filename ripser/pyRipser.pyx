@@ -6,20 +6,20 @@ import cython
 
 @cython.boundscheck(False)
 @cython.wraparound(False)
-def doRipsFiltrationDM(np.ndarray[float,ndim=1,mode="c"] DParam not None, int maxHomDim, float thresh=-1, int coeff=2, bint do_cocycles=0):
+def doRipsFiltrationDM(np.ndarray[float,ndim=1,mode="c"] DParam not None, int maxHomDim, float thresh=-1, int coeff=2, bint do_cocycles=0, bint save_birth_death_simplices=0):
 
 	cdef int N = DParam.shape[0]
 
-	res = pyRips.rips_dm(&DParam[0], N, coeff, maxHomDim, thresh, do_cocycles)
+	res = pyRips.rips_dm(&DParam[0], N, coeff, maxHomDim, thresh, do_cocycles, save_birth_death_simplices)
 
 	return res
 
 @cython.boundscheck(False)
 @cython.wraparound(False)
-def doRipsFiltrationDMSparse(np.ndarray[int,ndim=1,mode="c"] I not None, np.ndarray[int,ndim=1,mode="c"] J not None, np.ndarray[float,ndim=1,mode="c"] V not None, int N, int maxHomDim, float thresh=-1, int coeff=2, bint do_cocycles=0):
+def doRipsFiltrationDMSparse(np.ndarray[int,ndim=1,mode="c"] I not None, np.ndarray[int,ndim=1,mode="c"] J not None, np.ndarray[float,ndim=1,mode="c"] V not None, int N, int maxHomDim, float thresh=-1, int coeff=2, bint do_cocycles=0, bint save_birth_death_simplices=0):
 
 	cdef int NEdges = I.size
 
-	res = pyRips.rips_dm_sparse(&I[0], &J[0], &V[0], NEdges, N, coeff, maxHomDim, thresh, do_cocycles)
+	res = pyRips.rips_dm_sparse(&I[0], &J[0], &V[0], NEdges, N, coeff, maxHomDim, thresh, do_cocycles, save_birth_death_simplices)
 
 	return res

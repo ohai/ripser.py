@@ -16,8 +16,11 @@ cdef extern from "ripser.cpp":
 
 		int num_edges
 
+		vector[vector[vector[int]]] birth_simplices_by_dim
+		vector[vector[vector[int]]] death_simplices_by_dim
+
         # compute given the distance matrix D
-	ripserResults rips_dm(float* D, int N, int modulus, int dim_max, float threshold, bint do_cocycles)
+	ripserResults rips_dm(float* D, int N, int modulus, int dim_max, float threshold, bint do_cocycles, bint save_birth_death_simplices)
 	
         # compute given the sparse distance matrix D
-	ripserResults rips_dm_sparse(int* I, int* J, float* V, int NEdges, int N, int modulus, int dim_max, float threshold, bint do_cocycles)
+	ripserResults rips_dm_sparse(int* I, int* J, float* V, int NEdges, int N, int modulus, int dim_max, float threshold, bint do_cocycles, bint save_birth_death_simplices)

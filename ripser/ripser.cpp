@@ -509,6 +509,9 @@ typedef struct {
     /* The third variable is the number of edges that were added during the
      * computation*/
     int num_edges;
+    /* Birth and death simplices for each dimension */
+    std::vector<std::vector<std::vector<int>>> birth_simplices_by_dim;
+    std::vector<std::vector<std::vector<int>>> death_simplices_by_dim;
 } ripserResults;
 
 template <typename DistanceMatrix>
@@ -525,6 +528,7 @@ class ripser
     // If this flag is off, don't extract the representative cocycles to save
     // time
     const int do_cocycles;
+    const int save_birth_death_simplices;
 
     struct entry_hash {
         std::size_t operator()(const entry_t& e) const
@@ -549,14 +553,18 @@ class ripser
 public:
     mutable std::vector<std::vector<value_t>> births_and_deaths_by_dim;
     mutable std::vector<std::vector<std::vector<int>>> cocycles_by_dim;
-
+    std::vector<std::vector<std::vector<int>>> birth_simplices_by_dim;
+    std::vector<std::vector<std::vector<int>>> death_simplices_by_dim;
+    
     ripser(DistanceMatrix&& _dist, index_t _dim_max, value_t _threshold,
-           float _ratio, coefficient_t _modulus, int _do_cocycles)
+           float _ratio, coefficient_t _modulus, int _do_cocycles,
+           int _save_birth_death_simplices)
         : dist(std::move(_dist)), n(dist.size()), dim_max(_dim_max),
           threshold(_threshold), ratio(_ratio), modulus(_modulus),
           binomial_coeff(n, dim_max + 2),
           multiplicative_inverse(multiplicative_inverse_vector(_modulus)),
-          do_cocycles(_do_cocycles)
+          do_cocycles(_do_cocycles),
+          save_birth_death_simplices(_save_birth_death_simplices)
     {
     }
 
@@ -564,6 +572,8 @@ public:
     {
         res.births_and_deaths_by_dim = births_and_deaths_by_dim;
         res.cocycles_by_dim = cocycles_by_dim;
+        res.birth_simplices_by_dim = birth_simplices_by_dim;
+        res.death_simplices_by_dim = death_simplices_by_dim;
     }
 
     index_t get_max_vertex(const index_t idx, const index_t k,
@@ -666,6 +676,24 @@ public:
 #endif
     }
 
+    void add_simplex(index_t i, int dim, std::vector<int>& collection)
+    {
+        get_simplex_vertices(i, dim, n, std::back_inserter(collection));
+    }
+    void add_birth_death_simplex(index_t birth, index_t death, int dim)
+    {
+        birth_simplices_by_dim[dim].emplace_back();
+        if (birth != -1)
+            add_simplex(birth, dim, birth_simplices_by_dim[dim].back());
+        
+        death_simplices_by_dim[dim].emplace_back();
+        if (death != -1)
+            add_simplex(death, dim + 1, death_simplices_by_dim[dim].back());
+    }
+
+    index_t select_birth_vertex_in_dim_0(index_t u, index_t v, union_find& dset) {
+        return (dset.get_birth(u) >= dset.get_birth(v)) ? u : v;
+    }
     value_t get_vertex_birth(index_t i);
     void compute_dim_0_pairs(std::vector<diameter_index_t>& edges,
                              std::vector<diameter_index_t>& columns_to_reduce)
@@ -696,6 +724,10 @@ public:
                     if (death > birth) {
                         births_and_deaths_by_dim[0].push_back(birth);
                         births_and_deaths_by_dim[0].push_back(death);
+                        if (save_birth_death_simplices)
+                            add_birth_death_simplex(
+                                select_birth_vertex_in_dim_0(u, v, dset),
+                                get_index(e), 0);
                     }
                 }
                 dset.link(u, v);
@@ -709,6 +741,8 @@ public:
                 births_and_deaths_by_dim[0].push_back(dset.get_birth(i));
                 births_and_deaths_by_dim[0].push_back(
                     std::numeric_limits<value_t>::infinity());
+                if (save_birth_death_simplices)
+                    add_birth_death_simplex(i, -1, 0);
             }
     }
 
@@ -900,6 +934,10 @@ public:
                         if (death > diameter * ratio) {
                             births_and_deaths_by_dim[dim].push_back(diameter);
                             births_and_deaths_by_dim[dim].push_back(death);
+                            if (save_birth_death_simplices) {
+                                add_birth_death_simplex(get_index(column_to_reduce),
+                                                        get_index(pivot), dim);
+                            }
                             if (do_cocycles) {
                                 // Representative cocycle
                                 compute_cocycles(working_reduction_column, dim);
@@ -925,6 +963,8 @@ public:
                     births_and_deaths_by_dim[dim].push_back(diameter);
                     births_and_deaths_by_dim[dim].push_back(
                         std::numeric_limits<value_t>::infinity());
+                    if (save_birth_death_simplices)
+                        add_birth_death_simplex(get_index(column_to_reduce), -1, dim);
 
                     if (do_cocycles) {
                         // Representative cocycle
@@ -950,7 +990,9 @@ public:
 
         births_and_deaths_by_dim.resize(dim_max + 1);
         cocycles_by_dim.resize(dim_max + 1);
-
+        birth_simplices_by_dim.resize(dim_max + 1);
+        death_simplices_by_dim.resize(dim_max + 1);
+        
         compute_dim_0_pairs(simplices, columns_to_reduce);
 
         for (index_t dim = 1; dim <= dim_max; ++dim) {
@@ -1137,7 +1179,7 @@ std::vector<diameter_index_t> ripser<sparse_distance_matrix>::get_edges()
 }
 
 ripserResults rips_dm(float* D, int N, int modulus, int dim_max,
-                      float threshold, int do_cocycles)
+                      float threshold, int do_cocycles, int save_birth_death_simplices)
 {
     // Setup distance matrix and figure out threshold
     std::vector<value_t> distances(D, D + N);
@@ -1179,13 +1221,13 @@ ripserResults rips_dm(float* D, int N, int modulus, int dim_max,
     ripserResults res;
     if (threshold >= max) {
         ripser<compressed_lower_distance_matrix> r(
-            std::move(dist), dim_max, threshold, ratio, modulus, do_cocycles);
+            std::move(dist), dim_max, threshold, ratio, modulus, do_cocycles, save_birth_death_simplices);
         r.compute_barcodes();
         r.copy_results(res);
     } else {
         ripser<sparse_distance_matrix> r(
             sparse_distance_matrix(std::move(dist), threshold), dim_max,
-            threshold, ratio, modulus, do_cocycles);
+            threshold, ratio, modulus, do_cocycles, save_birth_death_simplices);
         r.compute_barcodes();
         r.copy_results(res);
     }
@@ -1195,14 +1237,14 @@ ripserResults rips_dm(float* D, int N, int modulus, int dim_max,
 
 ripserResults rips_dm_sparse(int* I, int* J, float* V, int NEdges, int N,
                              int modulus, int dim_max, float threshold,
-                             int do_cocycles)
+                             int do_cocycles, int save_birth_death_simplices)
 {
     // TODO: This seems like a dummy parameter at the moment
     float ratio = 1.0;
     // Setup distance matrix and figure out threshold
     ripser<sparse_distance_matrix> r(
         sparse_distance_matrix(I, J, V, NEdges, N, threshold), dim_max,
-        threshold, ratio, modulus, do_cocycles);
+        threshold, ratio, modulus, do_cocycles, save_birth_death_simplices);
     r.compute_barcodes();
     // Report the number of edges that were added
     int num_edges = 0;
@@ -1301,9 +1343,11 @@ extern "C" {
 */
 int c_rips_dm(int** n_intervals, value_t** births_and_deaths,
               int** cocycle_length, int** cocycles, value_t* D, int N,
-              int modulus, int dim_max, value_t threshold, int do_cocycles)
+              int modulus, int dim_max, value_t threshold, int do_cocycles,
+              int save_birth_death_simplices)
 {
-    ripserResults res = rips_dm(D, N, modulus, dim_max, threshold, do_cocycles);
+    ripserResults res = rips_dm(D, N, modulus, dim_max, threshold, do_cocycles,
+                                save_birth_death_simplices);
     return unpack_results(n_intervals, births_and_deaths, cocycle_length,
                           cocycles, res, do_cocycles);
 }
@@ -1319,10 +1363,10 @@ int c_rips_dm(int** n_intervals, value_t** births_and_deaths,
 int c_rips_dm_sparse(int** n_intervals, value_t** births_and_deaths,
                      int** cocycle_length, int** cocycles, int* I, int* J,
                      float* V, int NEdges, int N, int modulus, int dim_max,
-                     float threshold, int do_cocycles)
+                     float threshold, int do_cocycles, int save_birth_death_simplices)
 {
     ripserResults res = rips_dm_sparse(I, J, V, NEdges, N, modulus, dim_max,
-                                       threshold, do_cocycles);
+                                       threshold, do_cocycles, save_birth_death_simplices);
     return unpack_results(n_intervals, births_and_deaths, cocycle_length,
                           cocycles, res, do_cocycles);
 }

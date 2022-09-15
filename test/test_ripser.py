@@ -229,3 +229,27 @@ class TestParams:
         dgms2 = ripser(dm.tocsr(), distance_matrix=True)['dgms']
         for dgm1k, dgm2k in zip(dgms1, dgms2):
             assert(np.allclose(dgm1k, dgm2k))
+
+    def test_birth_death_simplices(self):
+        """
+        Test birth_death_simplices functionality.
+        """
+        def simplex_birth(D, simplex):
+            if simplex is None:
+                return np.inf
+            if len(simplex) == 1:
+                return 0
+            return max(D[u, v] for (u, v) in itertools.combinations(simplex, 2))
+
+        N = 90
+        np.random.seed(N)
+        X = np.random.randn(20, 3)
+        D = pairwise_distances(X, metric="euclidean").astype(np.float32)
+        res = ripser(D, maxdim=2, distance_matrix=True,
+                     save_birth_death_simplices=True)
+        for dim in [0, 1]:
+            dgm = res["dgms"][dim]
+            simplices = res["birth_death_simplices"][dim]
+            for ((birth, death), (birth_simplex, death_simplex)) in zip(dgm, simplices):
+                assert birth == simplex_birth(D, birth_simplex)
+                assert death == simplex_birth(D, death_simplex)
